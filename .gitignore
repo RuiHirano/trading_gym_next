@@ -117,3 +117,5 @@ sample/
 
 examples/dev.py
 examples/*.html
+dev.txt
+.pypirc

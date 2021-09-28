@@ -1,6 +1,12 @@
 # Trading Gym Next
 Trading environment for deep reinforcement learning in finance using backtesting.py
 
+<img width="1352" alt="スクリーンショット 2021-09-28 13 25 52" src="https://user-images.githubusercontent.com/43264434/135023130-72e6ef12-8e0e-4698-8057-6c7ddcd25a67.png">
+
+#### Reference
+[backtesting.py document](https://kernc.github.io/backtesting.py/)  
+[backtesting.py github](https://github.com/kernc/backtesting.py)
+
 ## Install
 
 ```
@@ -32,6 +38,7 @@ env.plot()
 
 
 Output: 
+
 ```
 
 episode: 0, step: 0, action: 1, reward: 0, done: False, timestamp: 0, episode_step: 0
@@ -174,5 +181,7 @@ env.plot(
     open_browser=True,
 )
 ```
+
+You can view on browser.
 
 <img width="1352" alt="スクリーンショット 2021-09-28 13 25 52" src="https://user-images.githubusercontent.com/43264434/135023130-72e6ef12-8e0e-4698-8057-6c7ddcd25a67.png">
