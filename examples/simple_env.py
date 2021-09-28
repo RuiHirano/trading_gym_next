@@ -15,5 +15,6 @@ if __name__ == "__main__":
             obs, reward, done, info = env.step(action)
             print("episode: {}, step: {}, action: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}".format(i, k, action, reward, done, info["timestamp"], info["episode_step"]))
             print(obs.tail())
-    env.stats()
+    stats = env.stats()
+    print(stats)
     env.plot()
