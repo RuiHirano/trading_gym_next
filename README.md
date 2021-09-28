@@ -174,3 +174,5 @@ env.plot(
     open_browser=True,
 )
 ```
+
+<img width="1352" alt="スクリーンショット 2021-09-28 13 25 52" src="https://user-images.githubusercontent.com/43264434/135023130-72e6ef12-8e0e-4698-8057-6c7ddcd25a67.png">
