@@ -1,0 +1,4 @@
+gym
+backtesting
+pandas
+numpy
