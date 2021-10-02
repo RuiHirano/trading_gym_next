@@ -1,39 +1,33 @@
 from backtesting.test import GOOG
 import random
+import gym
 from trading_gym_next import EnvParameter, TradingEnv
 
-class CustomEnv(TradingEnv):
+class CustomEnv(gym.Wrapper):
+    def __init__(self, param: EnvParameter):
+        env = TradingEnv(param)
+        super().__init__(env)
+        self.env = env
+        self.position_side = 0 # 0: No Position, 1: Long Position, 2: Short Position
 
-    def _reward(self):
-        # sum of profit
-        return sum([trade.pl for trade in self.strategy.trades])
+    def step(self, action):
 
-    def _done(self):
-        return True if self.episode_step >= 5 else False
+        if self.position_side == 1 and action == 1:
+            action = 0
+        if self.position_side == 2 and action == 2:
+            action = 0
 
-if __name__ == "__main__":
-    param = EnvParameter(
-        df=GOOG[:40], 
-        mode="sequential", 
-        window_size=10,
-        cash=10000,
-        commission=0.01,
-        margin=1,
-        trade_on_close=False,
-        hedging=False,
-        exclusive_orders=False,
-    )
-    env = CustomEnv(param)
-    
-    for i in range(2):
-        print("episode: ", i)
-        obs = env.reset()
-        done = False
-        while not done:
-            action = random.choice([0,1,2])
-            obs, reward, done, info = env.step(action, size=0.2)
-            print("episode: {}, action: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}".format(i, action, reward, done, info["timestamp"], info["episode_step"]))
-            print(obs.tail())
-    stats = env.stats()
-    print(stats)
-    env.plot()
+        obs, reward, done, info = self.env.step(action, size=1)
+
+        if self.position_side == 1 and action == 2 or self.position_side == 2 and action == 1:
+            done = True
+
+        if info["position"].size == 0:
+            if self.position_side != 0:
+                self.position_side = 0
+        elif info["position"].size > 0:
+            self.position_side = 1
+        elif info["position"].size < 0:
+            self.position_side = 2
+
+        return obs, reward, done, info
