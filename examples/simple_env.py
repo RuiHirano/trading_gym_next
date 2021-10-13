@@ -19,7 +19,6 @@ def run_simple_env():
     print("finished")
     stats = env.stats()
     print(stats)
-    #env.plot()
 
 if __name__ == "__main__":
     run_simple_env()

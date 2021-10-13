@@ -49,7 +49,6 @@ def run_custom_env():
 
     stats = env.stats()
     print(stats)
-    #env.plot()
 
 if __name__ == "__main__":
     run_custom_env()
