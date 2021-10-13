@@ -31,3 +31,25 @@ class CustomEnv(gym.Wrapper):
             self.position_side = 2
 
         return obs, reward, done, info
+
+def run_custom_env():
+    param = EnvParameter(df=GOOG[:200], mode="sequential", eval=False, window_size=10)
+    print(GOOG)
+    env = CustomEnv(param)
+    for i in range(200):
+        obs = env.reset()
+        done = False
+        step = 0
+        while not done:
+            action = random.choice([0,1,2])
+            obs, reward, done, info = env.step(action)
+            print("episode: {}, step: {}, action: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}, position: {}".format(i, step, action, reward, done, info["timestamp"], info["episode_step"], info["position"]))
+            print(obs.tail())
+            step += 1
+
+    stats = env.stats()
+    print(stats)
+    #env.plot()
+
+if __name__ == "__main__":
+    run_custom_env()

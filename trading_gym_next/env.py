@@ -5,9 +5,11 @@ from gym import spaces
 from threading import (Event, Thread)
 import random
 from typing import Union
+from gym.core import Env
 import pandas as pd
 import sys
 import threading
+import time
 
 class __FULL_EQUITY(float):
     def __repr__(self): return '.9999'
@@ -49,7 +51,6 @@ class BacktestingThread(Thread):
         self.callback_event = Event()
         self.kill_event = Event()
         self.result_event = Event()
-        self.count = 0
         self.window_size = window_size
         
     def run(self):
@@ -69,9 +70,9 @@ class BacktestingThread(Thread):
         self.kill_event.set()
 
     def _callback(self, strategy: Strategy):
-        self.count += 1
         self.strategy = strategy
-        if not self.kill_event.is_set() and self.count >= self.window_size:
+        
+        if not self.kill_event.is_set() and len(strategy.data) >= self.window_size:
             self.callback_event.set()
             self.step_event.wait()
             self.step_event.clear()
@@ -122,6 +123,7 @@ class EnvParameter:
         df: pd.DataFrame, 
         window_size: int,
         mode: str = "sequential", 
+        eval: bool = False,
         step_length: int = 1,
         cash: float = 10_000,
         commission: float = .0,
@@ -131,6 +133,7 @@ class EnvParameter:
         exclusive_orders=False
     ):
         self.df = df
+        self.eval = eval
         self.window_size = window_size
         self.step_length = step_length
         self.mode = mode  # "sequential": sequential episode, "random": episode start is random
@@ -164,20 +167,17 @@ class TradingEnv(gym.Wrapper):
     def __init__(self, param: EnvParameter):
         self.param = param
         self.action_space = spaces.Discrete(3) # action is [0, 1, 2] 0: HOLD, 1: BUY, 2: SELL
-        self.bt = None
-        self.strategy = None
-        self.timestamp = 0
-        self.episode_step = 0
-        self.episode_data = param.df
+        self.factory = EpisodeFactory(param)
+        self.episode = self.factory.create()
 
     def step(self, action, size: float = _FULL_EQUITY,
             limit: float = None,
             stop: float = None,
             sl: float = None,
             tp: float = None):
-        self.strategy = self.bt.get_strategy()
+
         if action == 1:
-            self.strategy.buy(
+            self.episode.strategy.buy(
                 size=size,
                 limit=limit,
                 stop=stop,
@@ -185,84 +185,54 @@ class TradingEnv(gym.Wrapper):
                 tp=tp,
             )
         elif action == 2:
-            self.strategy.sell(
+            self.episode.strategy.sell(
                 size=size,
                 limit=limit,
                 stop=stop,
                 sl=sl,
                 tp=tp,
             )
+        
 
+        self.episode.forward()
         obs = self._observation()
+        info = self._info()
         reward = self._reward()
         done = self._done()
-        info = self._info()
-
-        self._forward_timestamp()
-        self.episode_step += 1
 
         if done:
             self.reset()
+
         return obs, reward, done, info
 
     def reset(self):
-        self.episode_step = 0
-        self._set_next_episode_timestamp()
-        self._set_next_episode_data()
-        self.bt = BacktestingThread(
-            self.episode_data, 
-            self.param.window_size,
-            cash=self.param.cash,
-            commission=self.param.commission,
-            margin=self.param.margin,
-            trade_on_close=self.param.trade_on_close,
-            hedging=self.param.hedging,
-            exclusive_orders=self.param.exclusive_orders,
-        )
-        self.bt.daemon = True
-        self.bt.start()
-        self.strategy = self.bt.get_strategy()
+        self.episode = self.factory.create()
         obs = self._observation()
         return obs
 
-    def _forward_timestamp(self):
-        self.timestamp += self.param.step_length
-
     def _observation(self):
-        return self.strategy.data.df[-self.param.window_size:]
+        return self.episode.strategy.data.df[-self.param.window_size:]
 
     def _reward(self):
         # sum of profit percentage
-        return sum([trade.pl_pct for trade in self.strategy.trades])
+        return sum([trade.pl_pct for trade in self.episode.strategy.trades])
 
     def _done(self):
-        if len(self.strategy.data.df) >= len(self.episode_data):
-            return True
-        return False
+        return self.episode.finished
 
     def _info(self):
         return {
-            "episode_step": self.episode_step,
-            "timestamp": self.timestamp,
-            "orders": self.strategy.orders, 
-            "trades": self.strategy.trades, 
-            "position": self.strategy.position, 
-            "closed_trades": self.strategy.closed_trades, 
+            "episode_step": self.episode.episode_step,
+            "timestamp": self.episode.timestamp,
+            "orders": self.episode.strategy.orders, 
+            "trades": self.episode.strategy.trades, 
+            "position": self.episode.strategy.position, 
+            "closed_trades": self.episode.strategy.closed_trades, 
         }
 
-    def _set_next_episode_timestamp(self):
-        if self.param.mode == "random":
-            self.timestamp = random.choice(range(len(self.param.df)-self.param.window_size))
-        elif self.param.mode == "sequential":
-            if self.timestamp + self.param.window_size > len(self.episode_data):
-                self.timestamp = 0
-        return self.timestamp
-    
-    def _set_next_episode_data(self):
-        self.episode_data = self.param.df[self.timestamp:]
 
     def stats(self):
-        result = self.bt.stats()
+        result = self.episode.bt.stats()
         return result
 
     def plot(self,
@@ -282,7 +252,7 @@ class TradingEnv(gym.Wrapper):
         show_legend=True,
         open_browser=True
     ):
-        self.bt.plot(
+        self.episode.bt.plot(
             results=results,
             filename=filename,
             plot_width=plot_width,
@@ -299,3 +269,55 @@ class TradingEnv(gym.Wrapper):
             show_legend=show_legend,
             open_browser=open_browser,
         )
+
+class Episode:
+    def __init__(self, episode_data, param: EnvParameter):
+        self.episode_data = episode_data
+        self.episode_step = 0
+        self.timestamp = len(param.df) - len(episode_data)  # index of all data
+        self.param = param
+        self.finished = False
+        self.bt = BacktestingThread(
+            self.episode_data, 
+            self.param.window_size,
+            cash=self.param.cash,
+            commission=self.param.commission,
+            margin=self.param.margin,
+            trade_on_close=self.param.trade_on_close,
+            hedging=self.param.hedging,
+            exclusive_orders=self.param.exclusive_orders,
+        )
+        self.bt.daemon = True
+        self.bt.start()
+        self.strategy = self.bt.get_strategy()
+
+    def forward(self):
+        if not self.finished:
+            self.episode_step += 1
+            self.timestamp += 1
+            self.strategy = self.bt.get_strategy()
+            self.finished = True if len(self.strategy.data.df) >= len(self.episode_data) else False
+
+class EpisodeFactory:
+    def __init__(self, param: EnvParameter):
+        self.param = param
+        self.episode = None
+        self.create()
+
+    def create(self):
+        next_timestamp = self.get_next_episode_timestamp()
+        data = self.get_next_episode_data(next_timestamp)
+        self.episode = Episode(data, self.param)
+        return self.episode
+
+    def get_next_episode_data(self, timestamp):
+        return self.param.df[timestamp:]
+
+    def get_next_episode_timestamp(self):
+        if self.param.mode == "random":
+            return random.choice(range(len(self.param.df)-self.param.window_size))
+        else: # "sequential"
+            if self.episode == None or self.episode.timestamp + self.param.window_size > len(self.episode.episode_data):
+                return 0
+            else:
+                return self.episode.timestamp

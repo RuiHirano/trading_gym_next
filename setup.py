@@ -9,7 +9,7 @@ install_requires = [x.strip() for x in all_reqs]
 
 setup(
     name="trading-gym-next",
-    version="0.0.3",
+    version="0.0.5",
     packages=['trading_gym_next'],
     install_requires = install_requires,
     description='Trading Gym with Backtesting.py',
