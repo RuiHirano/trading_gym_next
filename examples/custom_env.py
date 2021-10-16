@@ -41,7 +41,7 @@ def run_custom_env():
     param = EnvParameter(df=GOOG[:200], mode="sequential", add_feature=True, window_size=10)
     print(GOOG)
     env = CustomEnv(param)
-    for i in range(200):
+    for i in range(20):
         print("Episode: ", i)
         obs = env.reset()
         done = False

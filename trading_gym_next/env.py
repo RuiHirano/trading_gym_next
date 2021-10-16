@@ -207,10 +207,6 @@ class TradingEnv(gym.Wrapper):
         self.episode.forward()
         obs, reward, done, info = self.episode.status()
 
-        if done:
-            self.reset()
-
-
         return obs, reward, done, info
 
     def reset(self):

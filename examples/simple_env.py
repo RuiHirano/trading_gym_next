@@ -7,7 +7,7 @@ def run_simple_env():
     print(GOOG)
     env = TradingEnv(param)
     
-    for i in range(100):
+    for i in range(20):
         print("episode: ", i)
         obs = env.reset()
         for k in range(10):
