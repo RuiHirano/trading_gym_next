@@ -32,7 +32,6 @@ for i in range(100):
 print("finished")
 stats = env.stats()
 print(stats)
-env.plot()
 ```
 
 Output: 
@@ -88,8 +87,6 @@ _equity_curve                           Eq...
 _trades                      Size  EntryBa...
 dtype: object
 ```
-
-You can view stats on browser.
 
 ## Custom Environment
 ```
@@ -157,7 +154,7 @@ env.render method is not implemented.
 | ---               | ---           | ---                   |
 | df                | Required*     | pandas.DataFrame with columns 'Open', 'High', 'Low', 'Close' and (optionally) 'Volume'. |
 | window_size       | Required*     | Window size of observation for each step|
-| mode              | "sequential"  | If "sequential", the next episode begins with a continuation of the time stamp of the previous episode. If "random", The next episode begins with a random timestamp. |
+| mode              | "sequential"  | If "sequential", the next episode begins with a continuation of the time stamp of the previous episode. If "random", The next episode begins with a random timestamp. If "backtest", env.reset() is unable. |
 | step_length       | 1             | How much to shift the timestamp of the next step |
 | cash              | 10,000        | cash                  |
 | commission        | .0            | commission            |

@@ -4,18 +4,23 @@ import gym
 from gym import spaces
 from threading import (Event, Thread)
 import random
-from typing import Union
+from typing import Union, Callable
 from gym.core import Env
 import pandas as pd
 import sys
 import threading
 import time
+import numpy as np
+import copy
 
 class __FULL_EQUITY(float):
     def __repr__(self): return '.9999'
 _FULL_EQUITY = __FULL_EQUITY(1 - sys.float_info.epsilon)
 
 class TradingStrategy(Strategy):
+    window_size: int
+    kill_event: Event
+    callback: Callable
     def init(self):
         pass
 
@@ -34,7 +39,13 @@ class BacktestingThread(Thread):
             exclusive_orders=False
         ):
         threading.Thread.__init__(self)
+        self.step_event = Event()
+        self.callback_event = Event()
+        self.kill_event = Event()
+        self.result_event = Event()
         TradingStrategy.callback = self._callback
+        TradingStrategy.window_size = window_size
+        TradingStrategy.kill_event = self.kill_event
         self.bt = Backtest(
             data, 
             TradingStrategy,
@@ -47,13 +58,10 @@ class BacktestingThread(Thread):
         )
         self.strategy = None
         self.result = None
-        self.step_event = Event()
-        self.callback_event = Event()
-        self.kill_event = Event()
-        self.result_event = Event()
         self.window_size = window_size
         
     def run(self):
+        time.sleep(0.01) # for sync first data
         self.result = self.bt.run()
         self.result_event.set()
 
@@ -72,7 +80,7 @@ class BacktestingThread(Thread):
     def _callback(self, strategy: Strategy):
         self.strategy = strategy
         
-        if not self.kill_event.is_set() and len(strategy.data) >= self.window_size:
+        if not self.kill_event.is_set() and len(self.strategy.data) >= self.window_size:
             self.callback_event.set()
             self.step_event.wait()
             self.step_event.clear()
@@ -123,7 +131,7 @@ class EnvParameter:
         df: pd.DataFrame, 
         window_size: int,
         mode: str = "sequential", 
-        eval: bool = False,
+        add_feature: bool = False,
         step_length: int = 1,
         cash: float = 10_000,
         commission: float = .0,
@@ -133,10 +141,10 @@ class EnvParameter:
         exclusive_orders=False
     ):
         self.df = df
-        self.eval = eval
+        self.add_feature = add_feature
         self.window_size = window_size
         self.step_length = step_length
-        self.mode = mode  # "sequential": sequential episode, "random": episode start is random
+        self.mode = mode  # "sequential": sequential episode, "random": episode start is random, "backtest": for eval
         self.cash = cash
         self.commission = commission
         self.margin = margin
@@ -167,14 +175,17 @@ class TradingEnv(gym.Wrapper):
     def __init__(self, param: EnvParameter):
         self.param = param
         self.action_space = spaces.Discrete(3) # action is [0, 1, 2] 0: HOLD, 1: BUY, 2: SELL
-        self.factory = EpisodeFactory(param)
-        self.episode = self.factory.create()
+        self.factory = EpisodeFactory(self.param)
+        self.episode = None
 
     def step(self, action, size: float = _FULL_EQUITY,
             limit: float = None,
             stop: float = None,
             sl: float = None,
             tp: float = None):
+        if self.episode == None:
+            print("NotEpisodeInitError: Please run env.reset() at first.")
+            sys.exit(1)
 
         if action == 1:
             self.episode.strategy.buy(
@@ -193,43 +204,19 @@ class TradingEnv(gym.Wrapper):
                 tp=tp,
             )
         
-
         self.episode.forward()
-        obs = self._observation()
-        info = self._info()
-        reward = self._reward()
-        done = self._done()
+        obs, reward, done, info = self.episode.status()
 
         if done:
             self.reset()
+
 
         return obs, reward, done, info
 
     def reset(self):
         self.episode = self.factory.create()
-        obs = self._observation()
+        obs, _, _, _ = self.episode.status()
         return obs
-
-    def _observation(self):
-        return self.episode.strategy.data.df[-self.param.window_size:]
-
-    def _reward(self):
-        # sum of profit percentage
-        return sum([trade.pl_pct for trade in self.episode.strategy.trades])
-
-    def _done(self):
-        return self.episode.finished
-
-    def _info(self):
-        return {
-            "episode_step": self.episode.episode_step,
-            "timestamp": self.episode.timestamp,
-            "orders": self.episode.strategy.orders, 
-            "trades": self.episode.strategy.trades, 
-            "position": self.episode.strategy.position, 
-            "closed_trades": self.episode.strategy.closed_trades, 
-        }
-
 
     def stats(self):
         result = self.episode.bt.stats()
@@ -272,6 +259,8 @@ class TradingEnv(gym.Wrapper):
 
 class Episode:
     def __init__(self, episode_data, param: EnvParameter):
+        if param.add_feature:
+            self.features = pd.DataFrame({"Reward": np.zeros(len(episode_data)), "Position": np.zeros(len(episode_data))}, index=episode_data.index)
         self.episode_data = episode_data
         self.episode_step = 0
         self.timestamp = len(param.df) - len(episode_data)  # index of all data
@@ -297,12 +286,49 @@ class Episode:
             self.timestamp += 1
             self.strategy = self.bt.get_strategy()
             self.finished = True if len(self.strategy.data.df) >= len(self.episode_data) else False
+        
+
+    def status(self):
+        # calc info
+        obs = self.observation()
+        info = self.info()
+        reward = self.reward()
+        done = self.done()
+
+        # add feature to obs
+        if self.param.add_feature:
+            self.features.at[self.strategy.data.df.index[-1], "Reward"] = reward
+            self.features.at[self.strategy.data.df.index[-1], "Position"] = info["position"].size
+            obs = pd.merge(obs, self.features[:len(self.strategy.data.df)], left_index=True, right_index=True)
+
+        return obs, reward, done, info
+
+
+    def observation(self):
+        return self.strategy.data.df[-self.param.window_size:]
+
+    def reward(self):
+        # sum of profit percentage
+        return sum([trade.pl_pct for trade in self.strategy.trades])
+
+    def done(self):
+        return self.finished
+
+    def info(self):
+        return {
+            "date": self.strategy.data.df.index[-1],
+            "episode_step": self.episode_step,
+            "timestamp": self.timestamp,
+            "orders": self.strategy.orders, 
+            "trades": self.strategy.trades, 
+            "position": self.strategy.position, 
+            "closed_trades": self.strategy.closed_trades, 
+        }
 
 class EpisodeFactory:
     def __init__(self, param: EnvParameter):
         self.param = param
         self.episode = None
-        self.create()
 
     def create(self):
         next_timestamp = self.get_next_episode_timestamp()
@@ -316,8 +342,8 @@ class EpisodeFactory:
     def get_next_episode_timestamp(self):
         if self.param.mode == "random":
             return random.choice(range(len(self.param.df)-self.param.window_size))
-        else: # "sequential"
+        else: # "sequential" or "backtest"
             if self.episode == None or self.episode.timestamp + self.param.window_size > len(self.episode.episode_data):
                 return 0
             else:
-                return self.episode.timestamp
+                return self.episode.timestamp + 1

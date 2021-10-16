@@ -7,15 +7,18 @@ def run_simple_env():
     print(GOOG)
     env = TradingEnv(param)
     
-    obs = env.reset()
     for i in range(100):
         print("episode: ", i)
         obs = env.reset()
         for k in range(10):
             action = random.choice([0,1,2])
-            obs, reward, done, info = env.step(action, size=1)
-            print("episode: {}, step: {}, action: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}, position: {}".format(i, k, action, reward, done, info["timestamp"]-1, info["episode_step"]-1, info["position"]))
-            print(obs.tail())
+            next_obs, reward, done, info = env.step(action)
+            print("obs", obs.tail())
+            print("action: ", action)
+            print("date: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}, position: {}".format(info["date"], reward, done, info["timestamp"], info["episode_step"], info["position"]))
+            print("next_obs", next_obs.tail())
+            print("-"*10)
+            obs = next_obs
     print("finished")
     stats = env.stats()
     print(stats)

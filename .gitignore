@@ -117,5 +117,6 @@ sample/
 
 examples/dev.py
 examples/*.html
+examples/tutorial.ipynb
 dev.txt
 .pypirc
