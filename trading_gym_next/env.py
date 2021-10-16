@@ -171,7 +171,7 @@ class EnvParameter:
         if self.mode not in ["sequential", "random"]:
             raise RuntimeError(("Parameter mode is invalid. You should be 'random' or 'sequential'"))
 
-class TradingEnv(gym.Wrapper):
+class TradingEnv(gym.Env):
     def __init__(self, param: EnvParameter):
         self.param = param
         self.action_space = spaces.Discrete(3) # action is [0, 1, 2] 0: HOLD, 1: BUY, 2: SELL
