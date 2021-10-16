@@ -13,6 +13,15 @@ Trading environment for deep reinforcement learning in finance using backtesting
 pip install trading_gym_next
 ```
 
+## Example
+
+```
+cd examples
+python simple_env.py
+python custom_env.py
+python backtest.py
+```
+
 ## Quick Start
 
 ```
@@ -20,15 +29,18 @@ param = EnvParameter(df=GOOG[:200], mode="sequential", window_size=10)
 print(GOOG)
 env = TradingEnv(param)
 
-obs = env.reset()
-for i in range(100):
+for i in range(20):
     print("episode: ", i)
     obs = env.reset()
     for k in range(10):
         action = random.choice([0,1,2])
-        obs, reward, done, info = env.step(action, size=1)
-        print("episode: {}, step: {}, action: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}, position: {}".format(i, k, action, reward, done, info["timestamp"]-1, info["episode_step"]-1, info["position"]))
-        print(obs.tail())
+        next_obs, reward, done, info = env.step(action)
+        print("obs", obs.tail())
+        print("action: ", action)
+        print("date: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}, position: {}".format(info["date"], reward, done, info["timestamp"], info["episode_step"], info["position"]))
+        print("next_obs", next_obs.tail())
+        print("-"*10)
+        obs = next_obs
 print("finished")
 stats = env.stats()
 print(stats)
@@ -119,19 +131,22 @@ class CustomEnv(gym.Wrapper):
 
         return obs, reward, done, info
 
-param = EnvParameter(df=GOOG[:200], mode="sequential", eval=False, window_size=10)
+param = EnvParameter(df=GOOG[:200], mode="sequential", add_feature=True, window_size=10)
 print(GOOG)
 env = CustomEnv(param)
-for i in range(200):
+for i in range(20):
+    print("Episode: ", i)
     obs = env.reset()
     done = False
-    step = 0
     while not done:
         action = random.choice([0,1,2])
-        obs, reward, done, info = env.step(action)
-        print("episode: {}, step: {}, action: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}, position: {}".format(i, step, action, reward, done, info["timestamp"], info["episode_step"], info["position"]))
-        print(obs.tail())
-        step += 1
+        next_obs, reward, done, info = env.step(action)
+        print("obs", obs.tail())
+        print("action: ", action)
+        print("date: {}, reward: {}, done: {}, timestamp: {}, episode_step: {}, position: {}".format(info["date"], reward, done, info["timestamp"], info["episode_step"], info["position"]))
+        print("next_obs", next_obs.tail())
+        print("-"*10)
+        obs = next_obs
 
 stats = env.stats()
 print(stats)
@@ -154,7 +169,8 @@ env.render method is not implemented.
 | ---               | ---           | ---                   |
 | df                | Required*     | pandas.DataFrame with columns 'Open', 'High', 'Low', 'Close' and (optionally) 'Volume'. |
 | window_size       | Required*     | Window size of observation for each step|
-| mode              | "sequential"  | If "sequential", the next episode begins with a continuation of the time stamp of the previous episode. If "random", The next episode begins with a random timestamp. If "backtest", env.reset() is unable. |
+| add_feature       | False     | add reward and position size features on observation|
+| mode              | "sequential"  | If "sequential", the next episode begins with a continuation of the time stamp of the previous episode. If "random", The next episode begins with a random timestamp. |
 | step_length       | 1             | How much to shift the timestamp of the next step |
 | cash              | 10,000        | cash                  |
 | commission        | .0            | commission            |
