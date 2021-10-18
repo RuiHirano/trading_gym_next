@@ -19,7 +19,6 @@ _FULL_EQUITY = __FULL_EQUITY(1 - sys.float_info.epsilon)
 
 class TradingStrategy(Strategy):
     window_size: int
-    kill_event: Event
     callback: Callable
     def init(self):
         pass
@@ -41,11 +40,10 @@ class BacktestingThread(Thread):
         threading.Thread.__init__(self)
         self.step_event = Event()
         self.callback_event = Event()
-        self.kill_event = Event()
         self.result_event = Event()
         TradingStrategy.callback = self._callback
         TradingStrategy.window_size = window_size
-        TradingStrategy.kill_event = self.kill_event
+        self.kill_flag = False
         self.bt = Backtest(
             data, 
             TradingStrategy,
@@ -66,21 +64,23 @@ class BacktestingThread(Thread):
         self.result_event.set()
 
     def get_strategy(self):
-        if not self.kill_event.is_set():
+        if not self.kill_flag:
             self.step_event.set()
             self.callback_event.wait()
             self.callback_event.clear()
         return self.strategy
 
     def kill(self):
+        self.kill_flag = True
         self.step_event.set()
         self.callback_event.set()
-        self.kill_event.set()
 
     def _callback(self, strategy: Strategy):
         self.strategy = strategy
-        
-        if not self.kill_event.is_set() and len(self.strategy.data) >= self.window_size:
+        if self.kill_flag:
+            sys.exit(0)
+
+        if len(self.strategy.data) >= self.window_size:
             self.callback_event.set()
             self.step_event.wait()
             self.step_event.clear()
@@ -210,6 +210,8 @@ class TradingEnv(gym.Env):
         return obs, reward, done, info
 
     def reset(self):
+        if self.episode != None:
+            self.episode.clear()
         self.episode = self.factory.create()
         obs, _, _, _ = self.episode.status()
         return obs
@@ -299,6 +301,9 @@ class Episode:
 
         return obs, reward, done, info
 
+    def clear(self):
+        self.bt.kill()
+        self.bt.join()
 
     def observation(self):
         return self.strategy.data.df[-self.param.window_size:]
